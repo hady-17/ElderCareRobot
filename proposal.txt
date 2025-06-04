@@ -1,0 +1,13 @@
+Dear Dr. Ahmad Hamoud,
+
+I hope this message finds you well. I am writing to kindly request your approval for my senior project proposal titled “Elder Care Monitoring Rover with Voice Assistant.”
+
+This project aims to develop an indoor robot that uses AI-powered facial recognition and a voice assistant to monitor an elderly person’s well-being, remind them about their medication schedule, and send alerts to family members via Discord or SMS if the user shows distress or does not respond. The system will run on a Raspberry Pi for offline operation, prioritizing privacy and reliability.
+
+I believe this project aligns with our program’s objectives and addresses an important real-world need.
+
+Could you please review and let me know if this idea is acceptable, or if you’d like me to adjust any aspect of the proposal?
+
+Thank you for your time and consideration.
+
+Best regards,
