@@ -1,5 +1,5 @@
 # recognize.py
-
+'''
 import cv2
 import dlib
 import numpy as np
@@ -74,4 +74,68 @@ while True:
 # Release and cleanup
 cap.release()
 cv2.destroyAllWindows()
-print("[INFO] Face recognition stopped.")
+print("[INFO] Face recognition stopped.")'''
+# recognize.py
+
+import cv2
+import dlib
+import numpy as np
+import pickle
+
+def recognize_face():
+    # Load encodings
+    with open("encodings.pickle", "rb") as f:
+        data = pickle.load(f)
+        known_encodings = data["encodings"]
+        known_names = data["names"]
+
+    # Load models
+    shape_predictor = dlib.shape_predictor("face_Recoginition/shape_predictor_68_face_landmarks.dat")
+    face_rec_model = dlib.face_recognition_model_v1("face_Recoginition/dlib_face_recognition_resnet_model_v1.dat")
+    detector = dlib.get_frontal_face_detector()
+
+    # Capture from webcam
+    cap = cv2.VideoCapture(0)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret:
+        print("[ERROR] Could not access webcam.")
+        return "Unknown"
+
+    # Convert BGR to RGB
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    # Detect faces
+    faces = detector(rgb_frame, 1)
+
+    if len(faces) == 0:
+        print("[INFO] No face detected.")
+        return "Unknown"
+
+    # For each face
+    for rect in faces:
+        shape = shape_predictor(rgb_frame, rect)
+        face_descriptor = face_rec_model.compute_face_descriptor(rgb_frame, shape)
+        face_encoding = np.array(face_descriptor)
+
+        # Compare with known encodings
+        matches = []
+        for known_encoding in known_encodings:
+            dist = np.linalg.norm(known_encoding - face_encoding)
+            matches.append(dist)
+
+        # Find best match
+        if matches:
+            min_dist = min(matches)
+            best_match_index = matches.index(min_dist)
+            if min_dist < 0.6:
+                name = known_names[best_match_index]
+                print(f"[INFO] Recognized: {name}")
+                return name
+            else:
+                print("[INFO] Face not recognized.")
+                return "Unknown"
+
+    return "Unknown"
+
