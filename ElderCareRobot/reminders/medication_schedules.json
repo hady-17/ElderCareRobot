@@ -1,0 +1,39 @@
+{
+  "schedules": [
+    {
+      "name": "Ali",
+      "medication": "Insulin",
+      "time": "09:00"
+    },
+    {
+      "name": "Ali",
+      "medication": "Insulin",
+      "time": "21:00"
+    },
+    {
+      "name": "Ali",
+      "medication": "Panadol",
+      "time": "08:00"
+    },
+    {
+      "name": "Ali",
+      "medication": "Panadol",
+      "time": "16:00"
+    },
+    {
+      "name": "Ali",
+      "medication": "Panadol",
+      "time": "00:00"
+    },
+    {
+      "name": "Hady",
+      "medication": "Nexium",
+      "time": "08:00"
+    },
+    {
+      "name": "Hady",
+      "medication": "Nexium",
+      "time": "12:00"
+    }
+  ]
+}
