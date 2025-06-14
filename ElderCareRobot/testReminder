@@ -1,0 +1,23 @@
+from reminders.custom_reminder import save_reminder, check_due_reminders
+from datetime import datetime, timedelta
+import time
+
+def test_reminder_trigger():
+    name = "test_user"
+    task = "drink water"
+
+    # Set reminder for 30 seconds from now
+    target_time = (datetime.now() + timedelta(seconds=30)).strftime("%I:%M %p")
+    print(f"[TEST] Setting reminder for {task} at {target_time}")
+    save_reminder(name, task, target_time)
+
+    print("[TEST] Waiting and checking for reminder...")
+
+    # Monitor reminder check every 10 seconds for 2 minutes
+    for i in range(12):
+        print(f"[TEST] Check {i + 1}")
+        check_due_reminders(name)
+        time.sleep(10)
+
+if __name__ == "__main__":
+    test_reminder_trigger()

@@ -1,91 +1,146 @@
-# custom_reminder.py
-
 import json
 import re
 from datetime import datetime, timedelta
+from dateparser import parse
+from word2number import w2n
 from voice_assistant.tts import speak
+from voice_assistant.speech_recoginition import recognize_speech
 
-REMINDER_FILE = "reminders.json"  # Path to the JSON file storing reminders
+REMINDER_FILE = "custom_reminders.json"
+
+def convert_written_time(phrase):
+    phrase = phrase.lower().strip()
+    phrase = phrase.replace("in the morning", "am").replace("in the evening", "pm").replace("at ", "")
+    words = phrase.split()
+    try:
+        if len(words) == 2 and words[1] in ("am", "pm"):
+            hour = w2n.word_to_num(words[0])
+            return f"{hour}:00 {words[1]}"
+        elif len(words) == 3 and words[2] in ("am", "pm"):
+            hour = w2n.word_to_num(words[0])
+            minute = w2n.word_to_num(words[1])
+            return f"{hour}:{minute:02d} {words[2]}"
+        elif len(words) == 2:
+            hour = w2n.word_to_num(words[0])
+            minute = w2n.word_to_num(words[1])
+            return f"{hour}:{minute:02d}"
+        elif len(words) == 1:
+            hour = w2n.word_to_num(words[0])
+            return f"{hour}:00"
+    except:
+        return None
+    return None
+
+def extract_task_and_time(prompt):
+    prompt = prompt.lower()
+    match = re.search(r"at ([a-zA-Z0-9 :]+)", prompt)
+    task = re.sub(r"remind me to |remember me to ", "", prompt, flags=re.IGNORECASE)
+
+    if match:
+        time_phrase = match.group(1).strip()
+        task = task.replace(f"at {time_phrase}", "").strip()
+
+        parsed = parse(time_phrase)
+        if not parsed:
+            converted = convert_written_time(time_phrase)
+            if converted:
+                parsed = parse(converted)
+
+        if parsed:
+            return task.strip(), parsed.strftime("%I:%M %p")
+
+    return task.strip(), None
 
 def load_reminders():
-    """Load reminders from a JSON file."""
     try:
-        with open(REMINDER_FILE, "r") as file:
-            reminders = json.load(file)
+        with open(REMINDER_FILE, "r") as f:
+            return json.load(f)
     except FileNotFoundError:
-        reminders = []  # If the file does not exist, return an empty list
-    return reminders
+        return []
 
 def save_reminders(reminders):
-    """Save reminders to the JSON file."""
-    with open(REMINDER_FILE, "w") as file:
-        json.dump(reminders, file, indent=4)
+    with open(REMINDER_FILE, "w") as f:
+        json.dump(reminders, f, indent=4)
 
-def extract_task_from_command(command):
-    """Extract task (e.g., 'eat' or 'take medicine') from the command."""
-    task_match = re.search(r"remind me to (.*)", command)
-    if task_match:
-        return task_match.group(1).strip()
-    return ""
-
-def extract_time_from_command(command):
-    """Extract time (e.g., '3:30 PM' or '3 PM') from the command."""
-    time_match = re.search(r"at (\d{1,2}:\d{2} (AM|PM)|\d{1,2} (AM|PM))", command)
-    if time_match:
-        return time_match.group(1)
-    return ""
-
-def handle_new_reminder(name, task, time_str):
-    """Handle adding a new reminder."""
-    if not task or not time_str:
-        speak("I could not understand the task or time. Please try again.")
-        return
-
-    reminder = {
+def save_reminder(name, task, time_str):
+    reminders = load_reminders()
+    reminders.append({
+        "name": name,
         "task": task,
         "time": time_str,
-        "name": name,
-        "type": "once"  # Default reminder type is 'once'
-    }
-
-    reminders = load_reminders()
-    reminders.append(reminder)
+        "type": "once"
+    })
     save_reminders(reminders)
+    speak(f"Reminder set for {name} to {task} at {time_str}.")
 
-    speak(f"Reminder set for {name}: {task} at {time_str}. This will be a one-time reminder.")
-
-def handle_remove_reminder(name, task):
-    """Handle removing a reminder."""
-    reminders = load_reminders()
-
-    # Remove the reminder by matching name and task
-    reminders = [r for r in reminders if not (r["name"].lower() == name.lower() and r["task"].lower() == task.lower())]
-    save_reminders(reminders)
-
-    speak(f"Reminder for {task} removed successfully.")
-
-def handle_modify_reminder(name, old_task, new_task, new_time, new_type):
-    """Handle modifying an existing reminder."""
-    reminders = load_reminders()
-
-    for r in reminders:
-        if r["name"].lower() == name.lower() and r["task"].lower() == old_task.lower():
-            r["task"] = new_task if new_task else r["task"]
-            r["time"] = new_time if new_time else r["time"]
-            r["type"] = new_type if new_type else r["type"]
-
-    save_reminders(reminders)
-    speak(f"Reminder for {old_task} updated successfully.")
-    
 def check_due_reminders(name):
     """Check if any reminder is due for the recognized elder."""
     reminders = load_reminders()
-    now = datetime.now().strftime("%I:%M %p")  # Get current time in 12-hour format with AM/PM
+    now = datetime.now()
+    now_str = now.strftime("%I:%M %p")
+    print(f"[DEBUG] Checking reminders at {now_str} for {name}")
+
+    updated = []
 
     for r in reminders:
-        if r["name"].lower() == name.lower() and r["time"] == now:
-            speak(f"It’s time to {r['task']}.")
-            if r["type"] == "daily":
-                next_time = (datetime.now() + timedelta(days=1)).strftime("%I:%M %p")
-                r["time"] = next_time  # Update time to next day
-                save_reminders(reminders)
+        reminder_time = r.get("time")
+        reminder_name = r.get("name")
+        reminder_task = r.get("task")
+
+        try:
+            rem_time_obj = datetime.strptime(reminder_time, "%I:%M %p")
+        except ValueError:
+            print(f"[WARN] Invalid time format in reminder: {reminder_time}")
+            updated.append(r)
+            continue
+
+        # Use today's date with reminder's time
+        rem_time_today = now.replace(hour=rem_time_obj.hour, minute=rem_time_obj.minute, second=0, microsecond=0)
+
+        # Compare time difference
+        time_diff = abs((now - rem_time_today).total_seconds())
+
+        if (name == "all" or reminder_name.lower() == name.lower()) and time_diff <= 60:
+            print(f"[MATCH] It's time for: {reminder_task} ({reminder_time})")
+            speak(f"It’s time to {reminder_task}.")
+            if r.get("type") != "daily":
+                continue  # Don't re-add if it's once
+            else:
+                updated.append(r)  # Keep daily reminder
+        else:
+            updated.append(r)
+
+    save_reminders(updated)
+
+def handle_interactive_reminder(name, initial_prompt=None):
+    if initial_prompt:
+        task, time_str = extract_task_and_time(initial_prompt)
+        if task and time_str:
+            save_reminder(name, task, time_str)
+            return
+        else:
+            speak("I couldn't understand the full reminder. Let's go step by step.")
+
+    speak("What do you want me to remind you about?")
+    task = recognize_speech()
+    if not task:
+        speak("I didn't catch that. Please try again later.")
+        return
+
+    speak("At what time should I remind you?")
+    time_phrase = recognize_speech()
+    if not time_phrase:
+        speak("I didn’t hear the time. Please try again later.")
+        return
+
+    parsed = parse(time_phrase)
+    if not parsed:
+        converted = convert_written_time(time_phrase)
+        if converted:
+            parsed = parse(converted)
+
+    if parsed:
+        time_str = parsed.strftime("%I:%M %p")
+        save_reminder(name, task, time_str)
+    else:
+        speak("Sorry, I couldn't understand the time. Please try again.")
