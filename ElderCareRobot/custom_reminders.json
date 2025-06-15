@@ -1,74 +1,16 @@
 [
-    {
-        "name": "hady",
-        "task": "e",
-        "time": "11:30 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "drink water",
-        "time": "04:00 PM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "take medicine",
-        "time": "06:15 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "go to sleep",
-        "time": "12:00 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "call the doctor",
-        "time": "10:00 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "check blood pressure",
-        "time": "12:00 PM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "e",
-        "time": "11:30 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "work",
-        "time": "12:00 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "work",
-        "time": "12:00 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "to work",
-        "time": "09:30 PM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "work",
-        "time": "09:30 AM",
-        "type": "once"
-    },
-    {
-        "name": "hady",
-        "task": "walk",
-        "time": "09:40 PM",
-        "type": "once"
-    }
+  {
+    "name": "hady",
+    "task": "take medicine",
+    "time": "02:45 PM",
+    "type": "once",
+    "done": false
+  },
+  {
+    "name": "hady",
+    "task": "walk outside",
+    "time": "04:00 PM",
+    "type": "daily",
+    "done": false
+  }
 ]

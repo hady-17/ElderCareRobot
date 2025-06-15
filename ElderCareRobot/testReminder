@@ -1,23 +1,47 @@
-from reminders.custom_reminder import save_reminder, check_due_reminders
+from reminders.custom_reminder import save_reminder, load_reminders
+from voice_assistant.tts import speak
 from datetime import datetime, timedelta
+from threading import Thread, Event
 import time
 
+interrupt_flag = Event()
+
+def background_check_loop(name):
+    print(f"[DEBUG] Background reminder checker started for {name}")
+    while True:
+        time.sleep(30)
+        now = datetime.now().strftime("%I:%M %p")
+        print(f"[DEBUG] Time now: {now}")
+        
+        reminders = load_reminders()
+        for r in reminders:
+            print(f"[DEBUG] Checking reminder: {r}")
+            if r["name"].lower() == name.lower() and r["time"] == now:
+                print(f"[ALERT] Triggered reminder: {r['task']}")
+                speak(f"Sorry for interrupting you. You have a reminder to {r['task']}.")
+                interrupt_flag.set()
+
 def test_reminder_trigger():
-    name = "test_user"
-    task = "drink water"
+    name = "hady"
+    task = "test reminder"
 
-    # Set reminder for 30 seconds from now
-    target_time = (datetime.now() + timedelta(seconds=30)).strftime("%I:%M %p")
-    print(f"[TEST] Setting reminder for {task} at {target_time}")
-    save_reminder(name, task, target_time)
+    # Set reminder 1 minute from now
+    target_time = (datetime.now() + timedelta(minutes=1)).strftime("%I:%M %p")
+    print(f"[TEST] Scheduling reminder: '{task}' at {target_time}")
+    save_reminder(name, task, target_time, "once")
 
-    print("[TEST] Waiting and checking for reminder...")
+    # Start background check thread
+    Thread(target=background_check_loop, args=(name,), daemon=True).start()
 
-    # Monitor reminder check every 10 seconds for 2 minutes
-    for i in range(12):
-        print(f"[TEST] Check {i + 1}")
-        check_due_reminders(name)
+    # Keep main thread alive while waiting
+    print("[TEST] Waiting up to 90 seconds for reminder to trigger...\n")
+    for _ in range(9):
         time.sleep(10)
+        if interrupt_flag.is_set():
+            print("[TEST] Reminder was successfully triggered.")
+            return
+
+    print("[ERROR] Reminder did not trigger. Please check time format and thread startup.")
 
 if __name__ == "__main__":
     test_reminder_trigger()

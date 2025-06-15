@@ -4,7 +4,8 @@ from voice_assistant.speech_recoginition import recognize_speech
 from voice_assistant.tts import speak
 from reminders.custom_reminder import (
     handle_interactive_reminder,
-    check_due_reminders
+    check_due_reminders,
+    load_reminders
 )
 from reminders.medication_reminder import (
     check_medication_schedule,
@@ -14,7 +15,36 @@ from reminders.medication_reminder import (
     load_medication_schedules
 )
 from reminders.sleep_alarm import handle_sleep_alarm, check_due_sleep_alarm
+from threading import Thread, Event
+from datetime import datetime
 import time
+
+interrupt_flag = Event()
+
+def background_check_loop(name):
+    while True:
+        print(f"[DEBUG] Background thread active for {name}")
+        time.sleep(30)  # check every 1 minute
+        now = datetime.now().strftime("%I:%M %p")
+        print(f"[BG] Checking reminders for {name} at {now}")
+
+        # Check custom reminders
+        reminders = load_reminders()
+        for r in reminders:
+            print(f"[DEBUG] Reminder: {r}")
+            if r["name"].lower() == name.lower() and r["time"] == now:
+                speak(f"Sorry for interrupting you. You have a reminder to {r['task']}.")
+                interrupt_flag.set()
+                break
+
+        # Check medications
+        next_med = get_next_medication(name)
+        if next_med and next_med['time'] == now:
+            speak(f"Sorry for interrupting you. It's time to take your medication: {next_med['medication']}.")
+            interrupt_flag.set()
+
+        # Check sleep alarms
+        check_due_sleep_alarm(name)
 
 def main():
     print("[INFO] Elder Care Rover is starting up...")
@@ -27,7 +57,7 @@ def main():
             check_due_sleep_alarm("all")
             time.sleep(30)
 
-            # Listen for wake word
+            # Wait for wake word
             detect_wake_word()
             speak("I'm here. Let me check who's speaking.")
             name = recognize_face()
@@ -37,14 +67,17 @@ def main():
             else:
                 speak("I couldn't recognize you. Please try again.")
 
-        # 🧠 Active session after recognition
+        # Start background reminder thread
+        Thread(target=background_check_loop, args=(name,), daemon=True).start()
+
+        # 🧠 Active session
         speak(f"Hello {name}! How can I help you today?")
         session_active = True
 
         while session_active:
-            check_due_reminders(name)
-            check_medication_schedule(name)
-            check_due_sleep_alarm(name)
+            if interrupt_flag.is_set():
+                interrupt_flag.clear()
+                continue  # skip input this cycle to let elder react
 
             command = recognize_speech()
             if not command:
@@ -109,9 +142,13 @@ def main():
                 else:
                     speak("No response received. Let me know if you need anything else.")
 
+            elif "what are my reminders" in command or "list my reminders" in command:
+                from reminders.custom_reminder import list_reminders_for
+                list_reminders_for(name)
+
             elif "emergency" in command:
                 speak("Calling for help now.")
-                # Emergency handling code goes here
+                # Emergency handling logic here
 
             elif "wake me up" in command or "i want to sleep" in command:
                 wake_time_str = handle_sleep_alarm(name, command)
