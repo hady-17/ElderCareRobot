@@ -5,6 +5,7 @@ from dateparser import parse
 from word2number import w2n
 from voice_assistant.tts import speak
 from voice_assistant.speech_recoginition import recognize_speech
+import time
 
 REMINDER_FILE = "custom_reminders.json"
 
@@ -62,7 +63,6 @@ def load_reminders():
         print("[WARN] Reminder file missing or corrupted. Resetting.")
         return []
 
-
 def save_reminders(reminders):
     with open(REMINDER_FILE, "w") as f:
         json.dump(reminders, f, indent=4)
@@ -108,13 +108,35 @@ def check_due_reminders(name):
 
         if (name == "all" or reminder_name.lower() == name.lower()) and time_diff <= 60:
             print(f"[MATCH] It’s time for: {reminder_task} ({reminder_time})")
-            speak(f"It’s time to {reminder_task}.")
-            if r.get("type") == "daily":
-                updated.append(r)
-            else:
-                print(f"[INFO] Marking one-time reminder as done: {reminder_task}")
-                r["done"] = True
-                updated.append(r)
+
+            acknowledged = False
+            max_attempts = 12  # try for up to 2 minutes
+            attempts = 0
+
+            while not acknowledged and attempts < max_attempts:
+                speak(f"It’s time to {reminder_task}. Please say 'got it' or 'stop' to confirm.")
+                print("[WAITING] Listening for acknowledgment...")
+                response = recognize_speech()
+                if response:
+                    response = response.lower()
+                    if any(word in response for word in ["got it", "cancel", "close", "stop"]):
+                        acknowledged = True
+                        print(f"[ACK] Acknowledged: {response}")
+                        break
+                    else:
+                        print(f"[REPEAT] Heard: {response} — not valid acknowledgment.")
+                else:
+                    print("[REPEAT] No response.")
+                time.sleep(10)
+                attempts += 1
+
+            if acknowledged:
+                if r.get("type") == "daily":
+                    updated.append(r)
+                else:
+                    r["done"] = True
+                    updated.append(r)
+                    print(f"[INFO] Marked reminder as done: {r}")
         else:
             updated.append(r)
 
@@ -161,71 +183,22 @@ def handle_interactive_reminder(name, initial_prompt=None):
     else:
         speak("Sorry, I couldn't understand the time. Please try again.")
 
-def list_reminders_for(name):
+def remove_old_done_reminders(days=2):
+    cutoff_time = datetime.now() - timedelta(days=days)
     reminders = load_reminders()
-    user_reminders = [r for r in reminders if r["name"].lower() == name.lower() and not r.get("done")]
+    cleaned = []
 
-    if not user_reminders:
-        speak("You have no upcoming reminders.")
-        return
+    for r in reminders:
+        if r.get("done") and r.get("type") == "once":
+            try:
+                rem_time = datetime.strptime(r["time"], "%I:%M %p")
+                reminder_datetime = datetime.combine(cutoff_time.date(), rem_time.time())
+                if reminder_datetime < cutoff_time:
+                    print(f"[CLEANUP] Removed old one-time reminder: {r}")
+                    continue
+            except Exception as e:
+                print(f"[ERROR] Failed to parse reminder time for cleanup: {r['time']} - {e}")
+                continue
+        cleaned.append(r)
 
-    speak(f"You have {len(user_reminders)} reminder{'s' if len(user_reminders) > 1 else ''}:")
-    for idx, r in enumerate(user_reminders, start=1):
-        speak(f"{idx}. {r['task']} at {r['time']} ({r['type']})")
-
-    speak("Would you like to modify or delete one? Say the number of the reminder.")
-
-    response = recognize_speech()
-    if not response:
-        speak("No response received.")
-        return
-
-    match = re.search(r"(\d+)", response)
-    if not match:
-        speak("I couldn't understand the number. Please try again next time.")
-        return
-
-    index = int(match.group(1)) - 1
-    if 0 <= index < len(user_reminders):
-        selected = user_reminders[index]
-        speak(f"Do you want to modify or delete reminder {index + 1}?")
-        action = recognize_speech()
-
-        if action and "delete" in action.lower():
-            all_reminders = load_reminders()
-            all_reminders = [r for r in all_reminders if r != selected]
-            save_reminders(all_reminders)
-            speak(f"Reminder number {index + 1} has been deleted.")
-
-        elif action and "modify" in action.lower():
-            speak("What should be the new task?")
-            new_task = recognize_speech()
-
-            speak("What time should I remind you?")
-            new_time = recognize_speech()
-            parsed_time = parse(new_time)
-            if not parsed_time:
-                speak("I couldn't understand the time. Canceling modification.")
-                return
-
-            speak("Should this be daily or once?")
-            new_type_response = recognize_speech()
-            new_type = "daily" if new_type_response and "daily" in new_type_response.lower() else "once"
-
-            selected['task'] = new_task if new_task else selected['task']
-            selected['time'] = parsed_time.strftime("%I:%M %p")
-            selected['type'] = new_type
-            selected['done'] = False
-
-            all_reminders = load_reminders()
-            for i, r in enumerate(all_reminders):
-                if r == user_reminders[index]:
-                    all_reminders[i] = selected
-                    break
-
-            save_reminders(all_reminders)
-            speak(f"Reminder number {index + 1} has been updated.")
-        else:
-            speak("Okay, no changes made.")
-    else:
-        speak("Invalid reminder number.")
+    save_reminders(cleaned)

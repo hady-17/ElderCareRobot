@@ -5,7 +5,7 @@ from voice_assistant.tts import speak
 from reminders.custom_reminder import (
     handle_interactive_reminder,
     check_due_reminders,
-    load_reminders
+    load_reminders,remove_old_done_reminders
 )
 from reminders.medication_reminder import (
     check_medication_schedule,
@@ -55,7 +55,8 @@ def main():
             check_due_reminders("all")
             check_medication_schedule("all")
             check_due_sleep_alarm("all")
-            time.sleep(30)
+            remove_old_done_reminders()
+            time.sleep(5)
 
             # Wait for wake word
             detect_wake_word()
