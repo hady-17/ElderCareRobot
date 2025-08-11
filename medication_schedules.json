@@ -1,0 +1,34 @@
+{
+  "schedules": [
+    {
+      "name": "hady",
+      "medication": "panadol",
+      "dose": "250mg",
+      "time": "03:30 PM"
+    },
+    {
+      "name": "ali",
+      "medication": "panadol",
+      "dose": "250mg",
+      "time": "03:30 PM"
+    },
+    {
+      "name": "hady",
+      "medication": "nexum",
+      "dose": "250mg",
+      "time": "07:59 PM"
+    },
+    {
+      "name": "hady",
+      "medication": "relaxation",
+      "dose": "250mg",
+      "time": "10:07 PM"
+    },
+    {
+      "name": "ali",
+      "medication": "panadol",
+      "dose": "250mg",
+      "time": "07:57 PM"
+    }
+  ]
+}

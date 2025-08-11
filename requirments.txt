@@ -1,0 +1,20 @@
+# Python packages (pip install)
+opencv-python
+numpy
+dlib
+sounddevice
+vosk
+pyttsx3
+twilio
+dateparser
+word2number
+python-dotenv
+ultralytics>=8.0.20; python_version < '3.12'  # Ultralytics doesn't support Python 3.12+
+resemblyzer
+librosa
+webrtcvad
+scipy
+
+
+# NOTE: The following are system packages and must be installed using apt (NOT pip)
+# libttspico-utils

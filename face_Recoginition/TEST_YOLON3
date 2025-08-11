@@ -1,0 +1,22 @@
+import cv2
+from person_detection import detect_person
+ip_camera_url = "http://127.0.0.1:8080?action=stream"  
+cap = cv2.VideoCapture(ip_camera_url)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    person_crop, _ = detect_person(frame)
+
+    if person_crop is not None and person_crop.size > 0:
+        cv2.imshow("Detected Person", person_crop)
+    else:
+        cv2.imshow("Frame", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
