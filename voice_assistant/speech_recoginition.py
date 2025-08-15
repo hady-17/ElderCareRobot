@@ -10,11 +10,13 @@ from difflib import get_close_matches
 # Config
 # =========================
 MODEL_PATH = os.environ.get("VOSK_MODEL_PATH", "voice_assistant/vosk-model-small-en-us-0.15")
+#what does fram_ms mean? 20, 30, 10
 
 SAMPLE_RATE = 16000       # Vosk model rate
-FRAME_MS    = 20          # 10, 20, or 30 (required by WebRTC VAD). 20ms = good latency.
+FRAME_MS    = 30          # 10, 20, or 30 (required by WebRTC VAD). 20ms = good latency.
 BLOCKSIZE   = SAMPLE_RATE * FRAME_MS // 1000  # samples per frame (e.g., 320 for 20 ms)
 DTYPE       = 'int16'
+
 
 VAD_AGGRESSIVENESS = int(os.environ.get("VAD_LEVEL", "2"))  # 0..3 (3 = most aggressive)
 QUEUE_TIMEOUT_S    = 0.05   # how often we wake up to check the queue (lower -> lower latency)

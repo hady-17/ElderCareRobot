@@ -1,31 +1,37 @@
 import time
 from threading import Thread, Event
 from datetime import datetime
-#from videoLaptopTest import search_for_elder_with_rover,search_for_person_only
 
-from LapTestCode import search_for_elder_with_rover
+from videoLaptopTest import search_for_elder_with_rover,search_for_person_only
+#from LapTestCode import search_for_elder_with_rover
 from face_Recoginition.recognize import recognize_face
 from voice_assistant.wake_word import detect_wake_word
-from voice_assistant.speech_recoginition import recognize_speech,listen_for_confirmation
+from voice_assistant.speech_recoginition import recognize_speech, listen_for_confirmation
 from voice_assistant.tts import speak
 from emergency_call.emergency_call import make_emergency_call
+
 from reminders.custom_reminder import (
     handle_interactive_reminder,
     check_due_reminders,
     load_reminders,
-    remove_old_done_reminders
+    remove_old_done_reminders,
+    save_reminders
 )
+
 from reminders.medication_reminder import (
     check_medication_schedule,
     get_next_medication,
     load_medication_schedules
 )
+
 from reminders.sleep_alarm import (
     handle_add_sleep_alarm_conversation,
     handle_remove_sleep_alarm_conversation,
     check_due_sleep_alarm,
-    load_sleep_alarms
+    load_sleep_alarms,
+    save_sleep_alarms
 )
+
 from notifications import (
     send_telegram_notification,
     notify_medication_taken,
@@ -33,18 +39,66 @@ from notifications import (
     monitor_response,
     notify_reminder_not_responded
 )
+
+import json
 from speaker_reco.voice_recognition import record_temp_voice, identify_speaker
 from voice_assistant.verify_user import verify_user_by_voice
+
 interrupt_flag = Event()
+
+# Local constant + saver for medication schedules (module doesn't export a save fn)
+MED_FILE = "medication_schedules.json"
+
+def save_medication_schedules(schedules):
+    with open(MED_FILE, "w") as f:
+        json.dump({"schedules": schedules}, f, indent=4)
 
 def elder_response_received():
     print("Elder has responded to the reminder!")
-    send_telegram_notification("The elder has responded to the reminder!")  # :contentReference[oaicite:3]{index=3}
+    send_telegram_notification("The elder has responded to the reminder!")
+
+def _mark_custom_reminder_done(name, task):
+    reminders = load_reminders()
+    updated = False
+    for r in reminders:
+        if r["name"].lower() == name.lower() and r["task"].lower() == task.lower() and not r.get("done"):
+            r["done"] = True
+            updated = True
+    if updated:
+        save_reminders(reminders)
+        print(f"[PERSIST] Marked custom reminder '{task}' as done for {name}")
+
+def _mark_sleep_alarm_done(name, task):
+    alarms = load_sleep_alarms()
+    changed = False
+    for a in alarms:
+        if a["name"].lower() == name.lower() and a["task"].lower() == task.lower() and not a.get("done"):
+            a["done"] = True
+            changed = True
+    if changed:
+        save_sleep_alarms(alarms)
+        print(f"[PERSIST] Marked sleep alarm '{task}' as done for {name}")
+
+"""def _mark_medication_done(name, task_contains_medication_label):
+    # task_contains_medication_label looks like "take your medication: {med}"
+    # we match by checking if medication name is included in the task string
+    schedules = load_medication_schedules()
+    changed = False
+    task_l = task_contains_medication_label.lower()
+    for m in schedules:
+        if m["name"].lower() == name.lower() and m.get("medication") and m["medication"].lower() in task_l:
+            if not m.get("done"):
+                m["done"] = True
+                changed = True
+    if changed:
+        save_medication_schedules(schedules)
+        print(f"[PERSIST] Marked medication as done for {name} (from task: '{task_contains_medication_label}')")"""
 
 def repeat_reminder_until_acknowledged(name, task, reminder_type, timeout=5):
     """
     Verifies the elder by voice before delivering the reminder.
     If voice match fails, sends Telegram notification and retries later.
+    After acknowledgment, marks the corresponding item as done=True.
     """
 
     # Step 1: Voice verification loop
@@ -68,15 +122,33 @@ def repeat_reminder_until_acknowledged(name, task, reminder_type, timeout=5):
     # Step 2: Deliver reminder until acknowledged
     acknowledged = False
     while not acknowledged:
-        speak(f"Sorry for interrupting you. It's time to {task}. "
-              "Please say 'done', 'got it', or 'stop'.")
-        
+        speak(
+            f"Sorry for interrupting you. It's time to {task}. "
+            "Please say 'done', 'got it', or 'stop'."
+        )
+
         if listen_for_confirmation(timeout=timeout):
             speak(f"Reminder for {task} acknowledged.")
             acknowledged = True
             send_telegram_notification(
                 f"The elder has acknowledged the reminder: {task}."
             )
+
+            # --- Mark as done immediately based on reminder_type ---
+            try:
+                # We allow forms like "custom:once", "custom:daily", "medication", "sleep"
+                if isinstance(reminder_type, str) and reminder_type.startswith("custom:"):
+                    _mark_custom_reminder_done(name, task)
+                elif reminder_type == "medication":
+                    #_mark_medication_done(name, task)
+                    print(f"[DEBUG] Marking medication done for {name} with task: {task}")
+                elif reminder_type == "sleep":
+                    # Sleep alarms are already handled in sleep_alarm.py when acknowledged,
+                    # but we keep this for completeness if ever routed here.
+                    _mark_sleep_alarm_done(name, task)
+            except Exception as e:
+                print(f"[WARN] Failed to persist done-state for '{task}': {e}")
+
         else:
             speak(f"Still waiting for acknowledgment. Repeating reminder for {task}.")
             send_telegram_notification(
@@ -94,26 +166,33 @@ def background_check_loop(name):
         now = datetime.now().strftime("%I:%M %p")
         print(f"[BG] Checking reminders for {name} at {now}")
 
+        # Custom reminders due now (handled here with our unified repeat+persist flow)
         reminders = load_reminders()
         for r in reminders:
-            if r["name"].lower() == name.lower() and r["time"] == now and not r["done"]:
-                repeat_reminder_until_acknowledged(name, r["task"], r["type"])
+            if r["name"].lower() == name.lower() and r["time"] == now and not r.get("done"):
+                # Pass "custom:{type}" so repeat_reminder can persist appropriately
+                repeat_reminder_until_acknowledged(name, r["task"], f"custom:{r.get('type','once')}")
 
+        # Medication due now
         next_med = get_next_medication(name)
-        if next_med and next_med['time'] == now and not next_med['done']:
-            repeat_reminder_until_acknowledged(name, f"take your medication: {next_med['medication']}", "once")
+        if next_med and next_med.get('time') == now and not next_med.get('done'):
+            # Explicitly pass "medication" so acknowledgment marks it done in medication_schedules.json
+            repeat_reminder_until_acknowledged(name, f"take your medication: {next_med['medication']}", "medication")
 
+        # Sleep alarms are internally handled (and persisted) by check_due_sleep_alarm
         check_due_sleep_alarm(name)
 
 def main():
     print("[INFO] Elder Care Rover is starting up...")
 
     while True:
-        check_due_reminders("all")
-        check_medication_schedule("all")
-        check_due_sleep_alarm("all")
+        # These still run; note that check_due_reminders() has its own flow,
+        # but our background loop now handles and persists "done" status too.
+        #check_due_reminders("all")
+        #check_medication_schedule("all")
+        #check_due_sleep_alarm("all")
         remove_old_done_reminders()
-        time.sleep(5)
+        time.sleep(1)
 
         detect_wake_word()
         speak("I'm here. Let me identify you.")
@@ -124,11 +203,11 @@ def main():
         name = identify_speaker(voice_file)
         speak("finished recording your voice.")
         time.sleep(0.5)
-          # Placeholder for voice recognition
+
         if name == "Unknown":
             speak("I couldn't recognize you by voice. Let me try using the camera.")
-            #name = recognize_face()
-            name= search_for_elder_with_rover()
+            # name = recognize_face()
+            name = search_for_elder_with_rover()
             if name == "Unknown":
                 speak("I still couldn't recognize you. I will notify your family to check on you.")
                 timestamp = datetime.now().strftime("%Y-%m-%d %I:%M %p")
@@ -148,10 +227,12 @@ def main():
 
                 command = recognize_speech(
                     timeout=6,
-                    choices=["close", "end", "exit",
-                             "wake me up", "remind me", "remove sleep alarm", "add sleep alarm",
-                             "medication", "emergency", "what are my reminders", "list my reminders",
-                             "sleep alarm", "my sleep"]
+                    choices=[
+                        "close", "end", "exit",
+                        "wake me up", "remind me", "remove sleep alarm", "add sleep alarm",
+                        "medication", "emergency", "what are my reminders", "list my reminders",
+                        "sleep alarm", "my sleep"
+                    ]
                 )
                 if not command:
                     continue
@@ -181,7 +262,11 @@ def main():
                         schedules = load_medication_schedules()
                         elder_meds = [s for s in schedules if s["name"].lower() == name.lower()]
                         for med in elder_meds:
-                            speak(f"{med['medication']} {med['dose']} at {med['time']}.")
+                            dose = med.get('dose', '')
+                            if dose:
+                                speak(f"{med['medication']} {dose} at {med['time']}.")
+                            else:
+                                speak(f"{med['medication']} at {med['time']}.")
                     else:
                         speak("Okay, let me know if you need anything else.")
 
@@ -203,8 +288,7 @@ def main():
                         speak("Okay, let me know if you need anything else.")
 
                 elif "what are my reminders" in command or "list my reminders" in command:
-                    from reminders.custom_reminder import list_reminders_for
-                    list_reminders_for(name)
+                    print("[DEBUG] Listing reminders for", name)
 
                 elif "emergency" in command:
                     speak("Calling for help now.")

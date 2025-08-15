@@ -9,6 +9,52 @@ import time
 from notifications import send_telegram_notification
 
 REMINDER_FILE = "custom_reminders.json"
+# --- Homophone-aware time normalization (add below your imports) ---
+NUMBER_WORDS = {
+    "zero","oh","o","one","two","three","four","five","six","seven","eight","nine","ten",
+    "eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen",
+    "twenty","thirty","forty","fifty"
+}
+HOMOPHONE_FIXES = {
+    "for": "four",
+    "to": "two",
+    "too": "two",
+    "won": "one",
+    "tree": "three",
+    "free": "three",     # optional, accents
+    "sex": "six",
+    "ate": "eight",
+    "oh": "zero",
+    "o": "zero",
+    "shifting": "fifteen",  # e.g., "shifting pm" -> "fifteen pm"
+}
+
+def _normalize_time_words(s: str) -> str:
+    """
+    Light homophone fixes only when used in a time phrase.
+    e.g., "for thirty pm" -> "four thirty pm"
+    """
+    s = s.lower().strip()
+    s = s.replace("a m", "am").replace("p m", "pm")
+    tokens = re.split(r"\s+", s)
+
+    def looks_like_number_word(tok):
+        return tok.isdigit() or tok in NUMBER_WORDS or re.fullmatch(r"\d{1,2}(:\d{1,2})?", tok) is not None
+
+    has_time_marker = any(t in ("am","pm") for t in tokens) or "in the morning" in s or "in the evening" in s
+
+    out = []
+    for i, t in enumerate(tokens):
+        nxt = tokens[i+1] if i+1 < len(tokens) else ""
+        # Only fix homophones if we detect time context or a numeric token next
+        if t in HOMOPHONE_FIXES and (has_time_marker or looks_like_number_word(nxt)):
+            out.append(HOMOPHONE_FIXES[t])
+        else:
+            out.append(t)
+
+    s = " ".join(out)
+    s = s.replace("-", " ")  # handle "thirty-five"
+    return s
 
 def extract_task_and_time(prompt):
     prompt = prompt.lower()
@@ -22,9 +68,12 @@ def extract_task_and_time(prompt):
         time_phrase = match.group(1).strip()
         task = task.replace(f"at {time_phrase}", "").strip()
 
-        parsed = parse(time_phrase)
+        # NEW: normalize homophones before parsing
+        time_phrase_norm = _normalize_time_words(time_phrase)
+
+        parsed = parse(time_phrase_norm)
         if not parsed:
-            converted = convert_to_12hr_format(time_phrase)
+            converted = convert_to_12hr_format(time_phrase_norm)  # already robust in sleep_alarm
             if converted:
                 parsed = parse(converted)
 
@@ -32,6 +81,7 @@ def extract_task_and_time(prompt):
             return task.strip(), parsed.strftime("%I:%M %p"), "daily" if is_daily else "once"
 
     return task.strip(), None, "daily" if is_daily else "once"
+
 
 def load_reminders():
     try:
@@ -145,9 +195,12 @@ def handle_interactive_reminder(name, initial_prompt=None):
         speak("I didn’t hear the time. Please try again later.")
         return
 
-    parsed = parse(time_phrase)
+    # NEW: normalize first
+    time_phrase_norm = _normalize_time_words(time_phrase)
+
+    parsed = parse(time_phrase_norm)
     if not parsed:
-        converted = convert_to_12hr_format(time_phrase)
+        converted = convert_to_12hr_format(time_phrase_norm)
         print(f"[DEBUG] Raw time phrase: {converted}")
         if converted:
             parsed = parse(converted)
@@ -157,14 +210,11 @@ def handle_interactive_reminder(name, initial_prompt=None):
         print(f"[DEBUG] Final reminder time: {time_str}")
         speak("Should this be a daily reminder or just once?")
         type_response = recognize_speech()
-        if type_response and "daily" in type_response.lower():
-            reminder_type = "daily"
-        else:
-            reminder_type = "once"
-
+        reminder_type = "daily" if (type_response and "daily" in type_response.lower()) else "once"
         save_reminder(name, task, time_str, reminder_type)
     else:
         speak("Sorry, I couldn't understand the time. Please try again.")
+
 
 def remove_old_done_reminders(days=2):
     cutoff_time = datetime.now() - timedelta(days=days)
